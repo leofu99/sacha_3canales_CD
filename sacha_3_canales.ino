@@ -1,6 +1,6 @@
 #include <Wire.h>
 #include "PCF8574.h" // Librería para el expansor I2C
-
+//comentario
 // Configuración del PCF8574
 PCF8574 pcf8574(0x27);
 
