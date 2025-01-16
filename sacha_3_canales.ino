@@ -1,84 +1,128 @@
-#include <Wire.h>
-#include "PCF8574.h" // Librería para el expansor I2C
-//comentario
-// Configuración del PCF8574
-PCF8574 pcf8574(0x27);
+// librerías
+#include <Wire.h>                 //libreria para comunicacion I2C
+#include <Keypad_I2C.h>           //libreria para teclado matricial I2C
+#include <LiquidCrystal_I2C.h>
 
-// Pines
-int mainMotor = 7;  // Pin para la señal de pulso
-int sensorPin = 0;  // Pin del sensor en el PCF8574
 
-// Variables del motor
+//definiciones
+// direcciones de i2c
+#define I2CADDR     0x20       //teclado matricial
+#define LCD_ADDRESS 0x27       //pantalla LCD
+#define LCD_COLUMNS 20
+#define LCD_ROWS    4
+
+
+//variables para el control del motor principal
+
+int targetVel = 300; // Velocidad objetivo
+int mainMotor = 7; // Pin para la señal de pulso
 unsigned long previousMainMotorTime = 0;
-int motorInterval = 1000;           // Intervalo inicial (µs)
-const int maxSpeed = 1000;           // Velocidad máxima (µs)
-const int minSpeed = 2000;          // Velocidad mínima (µs)
-int rampStep = 10;                  // Incremento/decremento de la rampa
-bool motorState = false;            // Estado del motor (ON/OFF)
-bool motorRunning = true;           // Si el motor está en marcha
+unsigned long mainMotorInterval = 5000; // Intervalo para el motor (espera inicial en us)
+unsigned long previousRampTime = 0; // Tiempo anterior para la rampa
+unsigned long rampInterval = 10; // Intervalo para actualizar la rampa (ms)
+bool motorState = false; // toogle para el motor
+bool activeMotor = true; // encender/apagar el motor
+bool isStopping = false;// en proceso de parar el otor
+int motorVelRange[2] = {300, 1400};
 
-// Variables del sensor
-bool sensorState = false;
+//variables para el manejo del teclado
+
+const byte ROWS = 4;              // teclado de cuatro filas
+const byte COLS = 4;              // teclado de cuatro columnas
+//define los simboles para cada boton del teclado
+char hexaKeys[ROWS][COLS] = {
+  {'1', '2', '3', 'A'},
+  {'4', '5', '6', 'B'},
+  {'7', '8', '9', 'C'},
+  {'*', '0', '#', 'D'}
+};
+byte rowPins[ROWS] = {6, 5, 4, 3}; // conecta las terminales fila al modulo I2C
+byte colPins[COLS] = {2, 1, 0, 7}; // conecta las terminales columna al modulo I2C
+Keypad_I2C customKeypad( makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS, I2CADDR); // crea el objeto para el teclado matricial
+LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLUMNS, LCD_ROWS); // objeto para la pantalla
 
 void setup() {
-  pinMode(mainMotor, OUTPUT);       // Configurar el pin del motor como salida
-  pcf8574.pinMode(sensorPin, INPUT); // Configurar el pin del sensor como entrada
-  Serial.begin(9600);               // Inicializar la comunicación serial
+  pinMode(mainMotor, OUTPUT);
+  customKeypad.begin( );
+  lcd.init();
+  lcd.backlight();
+  Serial.begin(9600);
+  Serial.println("Listo para recibir comandos de velocidad.");
+  lcd.setCursor(0, 0); // Establecer el cursor en la primera fila, primera columna
+  lcd.print("Buenos días :)");
 }
 
 void loop() {
-  readSensor();         // Leer el estado del sensor
-  rampMotorControl();   // Controlar el motor con la rampa
+  checkKeyboard();
+  handleSerialInput(); // Manejar entrada serial
+  updateSpeedRamp();   // Ajustar la velocidad suavemente
+  moveMainMotor();     // Control del motor
 }
 
-void rampMotorControl() {
-  // Control del motor con rampa de velocidad
-  if (!motorRunning) {
-    // Si el motor está detenido, asegurarse de que no genere pulsos
-    digitalWrite(mainMotor, LOW);
-    return;
+void moveMainMotor() {
+  if (activeMotor == true) {
+    unsigned long currentTime = micros();
+    if (currentTime - previousMainMotorTime >= mainMotorInterval) {
+      previousMainMotorTime = currentTime;
+      motorState = !motorState; // Alterna el estado del motor
+      digitalWrite(mainMotor, motorState ? HIGH : LOW);
+    }
   }
+}
 
-  unsigned long currentTime = micros();
-  if (currentTime - previousMainMotorTime >= motorInterval) {
-    previousMainMotorTime = currentTime;
-
-    // Generar señal de pulso para el motor
-    motorState = !motorState; // Alternar el estado del motor
-    digitalWrite(mainMotor, motorState ? HIGH : LOW);
-
-    // Ajustar la velocidad gradualmente
-    if (sensorState) {
-      // Si el sensor está activado, pausa el motor (velocidad al mínimo)
-      motorInterval = minSpeed;
+void handleSerialInput() {
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n'); // Leer entrada serial
+    int newTargetVel = input.toInt();           // Convertir a entero
+    if (newTargetVel > motorVelRange[0]  && newTargetVel < motorVelRange[1]   ) {
+      activeMotor = true;
+      rampInterval = 25;
+      targetVel = newTargetVel;                 // Actualizar velocidad objetivo
+      Serial.print("Velocidad objetivo: ");
+      Serial.println(targetVel);
+    } else if (newTargetVel == 0) {
+      Serial.println("Deteniendo el motor");
+      targetVel = 150;
+      isStopping = true;
+      rampInterval = 2;
     } else {
-      // Cambiar la velocidad progresivamente hacia el objetivo
-      if (motorInterval > maxSpeed) {
-        motorInterval -= rampStep; // Aumentar velocidad
-      } else if (motorInterval < minSpeed) {
-        motorInterval += rampStep; // Reducir velocidad
+      Serial.println("Entrada no válida.");
+    }
+  }
+}
+
+void updateSpeedRamp() {
+  unsigned long currentTime = millis();
+  if (currentTime - previousRampTime >= rampInterval) {
+    previousRampTime = currentTime;
+
+    // Convertir velocidad objetivo a intervalo deseado
+    unsigned long targetInterval = 1000000 / targetVel;
+
+    // Ajustar suavemente hacia el intervalo objetivo
+    if (mainMotorInterval > targetInterval) {
+      mainMotorInterval -= 10; // Reducir el intervalo (acelera)
+      if (mainMotorInterval < targetInterval) {
+        mainMotorInterval = targetInterval; // Evitar sobrepasar
+
+      }
+    } else if (mainMotorInterval < targetInterval) {
+      mainMotorInterval += 10; // Aumentar el intervalo (desacelera)
+      if (mainMotorInterval > targetInterval) {
+        mainMotorInterval = targetInterval; // Evitar sobrepasar
+        if (isStopping) {
+          isStopping = false;
+          activeMotor = false;
+        }
       }
     }
   }
 }
 
-void readSensor() {
-  // Leer el sensor con un intervalo de tiempo razonable (100 ms)
-  static unsigned long previousSensorTime = 0;
-  unsigned long currentTime = millis();
-  if (currentTime - previousSensorTime >= 100) {
-    previousSensorTime = currentTime;
-
-    // Leer el estado del sensor desde el PCF8574
-    sensorState = pcf8574.digitalRead(sensorPin);
-    if (sensorState) {
-      // Si el sensor está activado, detener el motor
-      motorRunning = false;
-      Serial.println("Sensor activado: Motor detenido.");
-    } else {
-      // Si el sensor está desactivado, permitir el funcionamiento del motor
-      motorRunning = true;
-      Serial.println("Sensor desactivado: Motor en funcionamiento.");
-    }
+void checkKeyboard() {
+  char tecla_presionada = customKeypad.getKey();  // detecta la tecla presionada
+  if (tecla_presionada != NO_KEY) {               //verifica si hubo una tecla presionada
+    Serial.println(tecla_presionada);             //escribe la tecla presionada en puerto serie
   }
+
 }

@@ -9,7 +9,7 @@
 
 #include <Wire.h>                 //libreria para comunicacion I2C
 #include <Keypad_I2C.h>           //libreria para teclado matricial I2C
-#include <Keypad.h>               //libreria para teclado matricial
+              //libreria para teclado matricial
 
 const byte ROWS = 4;              // teclado de cuatro filas
 const byte COLS = 4;              // teclado de cuatro columnas
