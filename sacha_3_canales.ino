@@ -2,6 +2,10 @@
 #include <Wire.h>                 //libreria para comunicacion I2C
 #include <Keypad_I2C.h>           //libreria para teclado matricial I2C
 #include <LiquidCrystal_I2C.h>
+#include <RTClib.h>   // incluye libreria para el manejo del modulo RTC
+#undef PCF8574
+#include "PCF8574.h" //i2c sensores hall
+//#include "HX711.h" //celda de carga
 
 
 //definiciones
@@ -40,8 +44,15 @@ byte rowPins[ROWS] = {6, 5, 4, 3}; // conecta las terminales fila al modulo I2C
 byte colPins[COLS] = {2, 1, 0, 7}; // conecta las terminales columna al modulo I2C
 Keypad_I2C customKeypad( makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS, I2CADDR); // crea el objeto para el teclado matricial
 LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLUMNS, LCD_ROWS); // objeto para la pantalla
+RTC_DS3231 rtc;     //objeto del tipo RTC
+PCF8574 pcf8574(0x27);
 
 void setup() {
+  //verificación del funcionamiento de los módulos
+   if (! rtc.begin()) {       // si falla la inicializacion del modulo
+ //Serial.println("Modulo RTC no encontrado !");
+// while (1); 
+  }
   pinMode(mainMotor, OUTPUT);
   customKeypad.begin( );
   lcd.init();
