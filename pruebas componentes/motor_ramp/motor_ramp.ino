@@ -1,5 +1,5 @@
 int targetVel = 300; // Velocidad objetivo
-int mainMotor = 7; // Pin para la señal de pulso
+int mainMotor = 2; // Pin para la señal de pulso
 unsigned long previousMainMotorTime = 0;
 unsigned long mainMotorInterval = 5000; // Intervalo para el motor (us)
 unsigned long previousRampTime = 0; // Tiempo anterior para la rampa
